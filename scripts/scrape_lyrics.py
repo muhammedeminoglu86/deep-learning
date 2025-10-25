@@ -15,13 +15,17 @@ class TurkishLyricsScraper:
         })
         self.scraped_songs = []
         self.genres = ['pop', 'rock', 'arabesk', 'rap', 'slow']
+        self.seen_song_urls = set()
         
     def get_page(self, url, max_retries=3):
         """Sayfa içeriğini güvenli şekilde al"""
         for attempt in range(max_retries):
             try:
-                response = self.session.get(url, timeout=10)
+                response = self.session.get(url, timeout=12)
                 response.raise_for_status()
+                # Encoding'i güvenli ayarla (Türkçe sitelerde önemli)
+                if response.apparent_encoding:
+                    response.encoding = response.apparent_encoding
                 return response
             except requests.RequestException as e:
                 print(f"Attempt {attempt + 1} failed for {url}: {e}")
@@ -53,7 +57,7 @@ class TurkishLyricsScraper:
             if not response:
                 continue
                 
-            soup = BeautifulSoup(response.content, 'html.parser')
+            soup = BeautifulSoup(response.text, 'html.parser')
             
             # Şarkı linklerini bul
             song_links = soup.find_all('a', href=True)
@@ -89,7 +93,7 @@ class TurkishLyricsScraper:
         if not response:
             return None
             
-        soup = BeautifulSoup(response.content, 'html.parser')
+        soup = BeautifulSoup(response.text, 'html.parser')
         
         try:
             # Şarkı başlığı
@@ -188,7 +192,7 @@ class TurkishLyricsScraper:
             if not response:
                 continue
                 
-            soup = BeautifulSoup(response.content, 'html.parser')
+            soup = BeautifulSoup(response.text, 'html.parser')
             
             # Şarkı linklerini bul
             song_links = soup.find_all('a', href=True)
@@ -224,7 +228,7 @@ class TurkishLyricsScraper:
         if not response:
             return None
             
-        soup = BeautifulSoup(response.content, 'html.parser')
+        soup = BeautifulSoup(response.text, 'html.parser')
         
         try:
             # Şarkı başlığı
@@ -282,6 +286,120 @@ class TurkishLyricsScraper:
         
         print(f"Backup saved: {backup_path}")
     
+    def scrape_bbs_tr(self, max_songs: int = 200):
+        """sarkisozleri.bbs.tr sitesinden şarkıları topla (basit gezgin)."""
+        print("sarkisozleri.bbs.tr songs scraping...")
+        start_url = "https://www.sarkisozleri.bbs.tr/"
+        domain = "www.sarkisozleri.bbs.tr"
+        visited_pages = set()
+        candidate_pages = [start_url]
+        candidate_set = {start_url}
+        song_count = len(self.scraped_songs)
+        stop_titles = {"Şarkı Sözleri", "Sanatçılar", "Hakkında", "Ara!", "Şarkı Sözü Ekle"}
+
+        def is_same_domain(href: str) -> bool:
+            try:
+                return urlparse(href).netloc in (domain, "")
+            except Exception:
+                return False
+
+        def absolutize(href: str) -> str:
+            return urljoin(start_url, href)
+
+        while candidate_pages and song_count < max_songs:
+            current = candidate_pages.pop(0)
+            if current in visited_pages:
+                continue
+            visited_pages.add(current)
+
+            resp = self.get_page(current)
+            if not resp:
+                continue
+
+            soup = BeautifulSoup(resp.content, "html.parser")
+
+            # Basit şarkı sayfası tespiti: başlık + uzun metin bloğu
+            title_elem = soup.find("h1")
+            page_text_blocks = []
+            for el in soup.find_all(["div", "article", "section"]):
+                try:
+                    text_len = len(el.get_text("\n", strip=True))
+                except Exception:
+                    text_len = 0
+                page_text_blocks.append((el, text_len))
+            page_text_blocks.sort(key=lambda x: x[1], reverse=True)
+
+            lyrics_text = ""
+            links_in_block = 0
+            if page_text_blocks:
+                largest_block = page_text_blocks[0][0]
+                # Navigasyon/altbilgi içermemesi için link yoğun blokları ele
+                text_candidate = largest_block.get_text("\n", strip=True)
+                links_in_block = len(largest_block.find_all("a"))
+                # Çok kısa blokları ele
+                if text_candidate and len(text_candidate) > 120:
+                    lyrics_text = text_candidate
+
+            # Şarkı sayfası gibi görünüyorsa kaydet
+            if title_elem and lyrics_text and song_count < max_songs:
+                title_full = title_elem.get_text(strip=True)
+                artist = "Unknown"
+                song_title = title_full
+                if " - " in title_full:
+                    parts = title_full.split(" - ")
+                    if len(parts) >= 2:
+                        artist = parts[0].strip()
+                        song_title = " - ".join(parts[1:]).strip()
+
+                # Çok uzun site içeriği gelirse kaba temizlik (üstteki başlık ve aşırı boşlukları sadeleştir)
+                cleaned = "\n".join([ln.strip() for ln in lyrics_text.splitlines() if ln.strip()])
+
+                # Filtreler: başlık kara liste, link yoğun bloklar, tekrar URL'ler
+                if (len(cleaned) >= 50 and
+                    title_full not in stop_titles and
+                    links_in_block <= 15 and
+                    current not in self.seen_song_urls):
+                    genre = self.determine_genre(song_title, artist, cleaned)
+                    self.scraped_songs.append({
+                        "title": song_title,
+                        "artist": artist,
+                        "lyrics": cleaned,
+                        "genre": genre,
+                        "year": "Unknown",
+                        "source": "sarkisozleri.bbs.tr",
+                        "url": current,
+                        "scraped_at": datetime.now().isoformat(),
+                    })
+                    self.seen_song_urls.add(current)
+                    song_count += 1
+                    print(f"[{song_count}] Song: {song_title} - {artist}")
+                    if song_count % 50 == 0:
+                        self.save_backup(f"bbs_backup_{song_count}.json")
+
+            # Yeni aday linkleri sıraya ekle (aynı domain, tekrar yok, sınırlı sayıda)
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if not href:
+                    continue
+                if href.startswith("javascript:") or href.startswith("mailto:"):
+                    continue
+                abs_url = absolutize(href)
+                if not is_same_domain(abs_url):
+                    continue
+                # Statik dosyaları atla
+                if any(abs_url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".svg", ".css", ".js", ".pdf", ".zip")):
+                    continue
+                if "#" in abs_url:
+                    abs_url = abs_url.split("#", 1)[0]
+                if abs_url in visited_pages or abs_url in candidate_set:
+                    continue
+                candidate_pages.append(abs_url)
+                candidate_set.add(abs_url)
+
+            # Basit ilerleme çıktısı
+            if song_count % 50 == 0:
+                print(f"Progress: songs={song_count}, visited={len(visited_pages)}, queue={len(candidate_pages)}")
+    
     def save_final_data(self):
         """Final veriyi kaydet"""
         # CSV formatında kaydet
@@ -322,11 +440,25 @@ def main():
     scraper = TurkishLyricsScraper()
     
     try:
-        # Genius.com'dan scrape et
-        scraper.scrape_genius_turkish(max_songs=200)
-        
-        # Sarki-sozleri.com'dan scrape et  
-        scraper.scrape_sarki_sozleri(max_songs=300)
+        # CLI argümanları (site, max)
+        import sys
+        site_select = os.environ.get("SCRAPE_SITE", "all").lower()
+        if len(sys.argv) >= 2 and sys.argv[1]:
+            site_select = sys.argv[1].lower()
+        try:
+            target_max = int(os.environ.get("MAX_SONGS", "100"))
+        except Exception:
+            target_max = 100
+        if len(sys.argv) >= 3 and sys.argv[2].isdigit():
+            target_max = int(sys.argv[2])
+        if site_select in ("bbs", "bbs_tr"):
+            scraper.scrape_bbs_tr(max_songs=target_max)
+        else:
+            # Genius.com'dan scrape et
+            scraper.scrape_genius_turkish(max_songs=target_max)
+            
+            # Sarki-sozleri.com'dan scrape et  
+            scraper.scrape_sarki_sozleri(max_songs=target_max)
         
         # Final veriyi kaydet
         scraper.save_final_data()
