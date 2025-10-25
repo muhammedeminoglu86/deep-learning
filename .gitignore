@@ -22,8 +22,8 @@ wheels/
 MANIFEST
 
 # PyTorch
-*.pth
-*.pt
+# *.pth  # Model dosyalarını dahil et
+# *.pt
 checkpoints/
 
 # Jupyter Notebook
@@ -39,17 +39,17 @@ env.bak/
 venv.bak/
 
 # Data
-data/raw/*.csv
-data/raw/*.json
-data/processed/*.csv
-data/processed/*.json
+# data/raw/*.csv  # Veri dosyalarını dahil et
+# data/raw/*.json
+# data/processed/*.csv
+# data/processed/*.json
 *.pkl
 *.pickle
 
 # Results
-results/*.png
-results/*.jpg
-results/*.pdf
+# results/*.png  # Grafikleri dahil et
+# results/*.jpg
+# results/*.pdf
 results/*.csv
 results/*.json
 
