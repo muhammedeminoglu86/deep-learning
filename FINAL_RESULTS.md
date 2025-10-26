@@ -1,10 +1,14 @@
 
-# TURKCE SARKI SOZU ANALIZI - FINAL SONUCLAR
+# TURKCE SARKI SOZU ANALIZI - FİNAL SONUÇLAR
 
-## EN IYI MODEL: CNN
+## EN İYİ MODEL: CNN
 **Accuracy:** 81.44%
 **Parametre:** 2.9M
-**Durum:** OK EN IYI PERFORMANS
+**Durum:** ✅ EN İYİ PERFORMANS
+
+## 📊 PROJE ÖZETİ
+
+Bu proje, Türkçe şarkı sözlerini analiz ederek müzik türlerini (genre) otomatik olarak sınıflandırmak için 6 farklı deep learning modelini karşılaştırmıştır. Proje, gerçek veri seti ile (3,605 şarkı) kapsamlı bir değerlendirme yapmış ve **CNN modelinin %81.44 accuracy ile en yüksek performansı** gösterdiğini kanıtlamıştır.
 
 ## TUM MODEL SONUCLARI
 
